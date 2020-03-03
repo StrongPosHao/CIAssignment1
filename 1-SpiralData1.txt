@@ -4,7 +4,7 @@ NumIPs: 2
 NumOPs: 1 
 NumTrnPats: 192
 NumTstPats: 192
-NumIts: 1000000
+NumIts: 100000
 NumHN: 2
 NumHN1: 10
 NumHN2: 10
@@ -12,7 +12,7 @@ LrnRate: 0.05
 Mtm1: 1.2
 Mtm2: 0.4
 ObjErr: 0.005
-Ordering: 0
+Ordering: 100
 
 0.971354	0.209317	1
 -0.971354	-0.209317	0
