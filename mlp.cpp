@@ -38,10 +38,10 @@ float **w1,**w11,**w111;// 1st layer wts
 float **w2,**w22,**w222;// 2nd layer wts
 float **w3,**w33,**w333;// 3rd layer wts
 float **w4,**w44,**w444;// 4th layer wts
-int* FixedOrderingIndex(float **x, int NumPats);
-int* RandomOrderingIndex(float **x, int NumPats);
-int* RandomSwapOrderingIndex(int* idx, int NumPats);
-int *RandomNOrderingIndex(float **x, int NumPats, int N, bool* misClassified);
+int RandomSwapOrderingIndex(int* idx, int NumPats);
+int RandomOrderingIndex(int* idx, int NumPats);
+int RandomSwapOrderingIndex(int* idx, int NumPats);
+int RandomNOrderingIndex(int *idx, int NumPats, int N, bool* misClassified);
 void TrainNet(float **x,float **d,int NumIPs,int NumOPs,int NumPats, int ordering);
 //void TrainNetFixed(float **x,float **d,int NumIPs,int NumOPs,int NumPats);
 //void TrainNetRandom(float **x,float **d,int NumIPs,int NumOPs,int NumPats);
@@ -126,28 +126,24 @@ int main(){
 }
 
 // Ordering option 0
-int* FixedOrderingIndex(float **x, int NumPats) {
-  int *idx = new int[NumPats];
+int FixedOrderingIndex(int *idx, int NumPats) {
   for (int i = 0; i < NumPats; i++) {
     idx[i] = i;
   }
-  return idx;
+  return NumPats;
 }
 
 // Ordering option 1
-int* RandomOrderingIndex(float **x, int NumPats) {
-  int *idx = new int[NumPats];
-  for (int i = 0; i < NumPats; i++) {
-    idx[i] = i;
-  }
+int RandomOrderingIndex(int *idx, int NumPats) {
+  FixedOrderingIndex(idx, NumPats);
   for (int i = NumPats - 1; i > 0; i--) {
     swap(idx[i], idx[rand() % i]);
   }
-  return idx;
+  return NumPats;
 }
 
 // Ordering option 2
-int* RandomSwapOrderingIndex(int* idx, int NumPats) {
+int RandomSwapOrderingIndex(int* idx, int NumPats) {
   while(true) {
     int randIdx1 = rand() % NumPats, randIdx2 = rand() % NumPats;
     if (randIdx1 != randIdx2) {
@@ -155,14 +151,13 @@ int* RandomSwapOrderingIndex(int* idx, int NumPats) {
       break;
     }
   }
-  return idx;
+  return NumPats;
 }
 
 // Ordering option N
-int *RandomNOrderingIndex(float **x, int NumPats, int N, bool* misClassified) {
-  int *idx = new int[NumPats];
-  int cnt = 0;
+int RandomNOrderingIndex(int *idx, int NumPats, int N, bool* misClassified) {
   int first_index = 0;
+  int cnt = 0;
   for (int i = 0; i < N; i++) {
     int randNum = rand() % NumPats;
     if (i == 0) {
@@ -175,7 +170,7 @@ int *RandomNOrderingIndex(float **x, int NumPats, int N, bool* misClassified) {
   if (cnt == 0) {
     idx[cnt++] = first_index;
   }
-  return idx;
+  return cnt;
 }
 
 
@@ -192,7 +187,7 @@ void TrainNet(float **x,float **d,int NumIPs,int NumOPs,int NumPats, int orderin
   long ItCnt=0;  // Iteration counter
   long NumErr=0; // Error counter (added for spiral problem)
   
-  cout<<"TrainNetFixed: IP:"<<NumIPs<<" H1:"<<NumHN1<<" OP:"<<NumOPs<<endl;
+  cout<<"TrainNet2: IP:"<<NumIPs<<" H1:"<<NumHN1<<" OP:"<<NumOPs<<endl;
 
   // Allocate memory for weights
   w1   = Aloc2DAry(NumIPs,NumHN1);// 1st layer wts
@@ -211,25 +206,25 @@ void TrainNet(float **x,float **d,int NumIPs,int NumOPs,int NumPats, int orderin
     for(j=0;j<NumOPs;j++)
       w2[i][j]=w22[i][j]=w222[i][j]= float(rand())/RAND_MAX - 0.5;
       
-  // Init index array by ordering
-  int* idx;
-  bool misClassified[NumPats];
-  if (ordering == 0) {
-    idx = FixedOrderingIndex(x, NumPats);
-  } else if (ordering == 1 || ordering == 2) {
-    idx = RandomOrderingIndex(x, NumPats);
-  } else {
-      for (int i = 0; i < NumPats; i++) {
-        misClassified[i] = true;
-      }
-  }
+    bool misClassified[NumPats] = {true};
+    int idx[NumPats];
+    int cnt = 0;
+    if (ordering == 0) {
+      cnt = FixedOrderingIndex(idx, NumPats);
+    } else if (ordering == 2) {
+      cnt = RandomOrderingIndex(idx, NumPats);
+    }
 
   for(;;){// Main learning loop
-    MinErr=3.4e38; AveErr=0; MaxErr=-3.4e38; NumErr=0;
-    if (ordering > 2) {
-      idx = RandomNOrderingIndex(x, NumPats, ordering, misClassified);
+  // Init index array by ordering
+  //  int tempNumPats = NumPats;
+    if (ordering == 1) {
+      cnt = RandomOrderingIndex(idx, NumPats);
+    } else {
+      cnt = RandomNOrderingIndex(idx, NumPats, ordering, misClassified);
     }
-    for(p=0;p<NumPats;p++){ // for each pattern...
+    MinErr=3.4e38; AveErr=0; MaxErr=-3.4e38; NumErr=0;
+    for(p=0;p<cnt;p++){ // for each pattern...
       // Cal neural network output
       for(i=0;i<NumHN1;i++){ // Cal O/P of hidden layer 1
         float in=0;
@@ -250,7 +245,9 @@ void TrainNet(float **x,float **d,int NumIPs,int NumOPs,int NumPats, int orderin
         float err=y[i]-d[idx[p]][i]; // actual-desired O/P
         if(err>0)PatErr+=err; else PatErr-=err;
         NumErr += ((y[i]<0.5&&d[idx[p]][i]>=0.5)||(y[i]>=0.5&&d[idx[p]][i]<0.5));//added for binary classification problem
-        misClassified[idx[p]] = ((y[i]<0.5&&d[idx[p]][i]>=0.5)||(y[i]>=0.5&&d[idx[p]][i]<0.5));
+        if (ordering > 2) {
+          misClassified[idx[p]] = ((y[i]<0.5&&d[idx[p]][i]>=0.5)||(y[i]>=0.5&&d[idx[p]][i]<0.5))?true : false;
+        } 
       }
       if(PatErr<MinErr)MinErr=PatErr;
       if(PatErr>MaxErr)MaxErr=PatErr;
@@ -281,9 +278,10 @@ void TrainNet(float **x,float **d,int NumIPs,int NumOPs,int NumPats, int orderin
         }
       }
     }// end for each pattern
+    
     ItCnt++;
-    AveErr/=NumPats;
-    float PcntErr = NumErr/float(NumPats) * 100.0;
+    AveErr/=cnt;
+    float PcntErr = NumErr/float(cnt) * 100.0;
     cout.setf(ios::fixed|ios::showpoint);
     if (ItCnt % 1000 == 0)
        cout<<setprecision(6)<<setw(6)<<ItCnt<<": "<<setw(12)<<MinErr<<setw(12)<<AveErr<<setw(12)<<MaxErr<<setw(12)<<PcntErr<<endl;
@@ -291,7 +289,6 @@ void TrainNet(float **x,float **d,int NumIPs,int NumOPs,int NumPats, int orderin
     if (ordering == 2) {
       RandomSwapOrderingIndex(idx, NumPats);
     }
-    
   }// end main learning loop
   // Free memory
   delete h1; delete y; 
@@ -304,507 +301,6 @@ void TrainNet(float **x,float **d,int NumIPs,int NumOPs,int NumPats, int orderin
   Free2DAry(w222, NumHN1);
 }
 
-//void TrainNetFixed(float **x,float **d,int NumIPs,int NumOPs,int NumPats){
-//// Trains 2 layer back propagation neural network
-//// x[][]=>input data, d[][]=>desired output data
-//
-//  float *h1 = new float[NumHN1]; // O/Ps of hidden layer
-//  float *y  = new float[NumOPs]; // O/P of Net
-//  float *ad1= new float[NumHN1]; // HN1 back prop errors
-//  float *ad2= new float[NumOPs]; // O/P back prop errors
-//  float PatErr,MinErr,AveErr,MaxErr;  // Pattern errors
-//  int p,i,j;     // for loops indexes
-//  long ItCnt=0;  // Iteration counter
-//  long NumErr=0; // Error counter (added for spiral problem)
-//
-//  cout<<"TrainNetFixed: IP:"<<NumIPs<<" H1:"<<NumHN1<<" OP:"<<NumOPs<<endl;
-//
-//  // Allocate memory for weights
-//  w1   = Aloc2DAry(NumIPs,NumHN1);// 1st layer wts
-//  w11  = Aloc2DAry(NumIPs,NumHN1);
-//  w111 = Aloc2DAry(NumIPs,NumHN1);
-//  w2   = Aloc2DAry(NumHN1,NumOPs);// 2nd layer wts
-//  w22  = Aloc2DAry(NumHN1,NumOPs);
-//  w222 = Aloc2DAry(NumHN1,NumOPs);
-//
-//  // Init wts between -0.5 and +0.5
-//  srand(time(0));
-//  for(i=0;i<NumIPs;i++)
-//    for(j=0;j<NumHN1;j++)
-//    w1[i][j]=w11[i][j]=w111[i][j]= float(rand())/RAND_MAX - 0.5;
-//  for(i=0;i<NumHN1;i++)
-//    for(j=0;j<NumOPs;j++)
-//      w2[i][j]=w22[i][j]=w222[i][j]= float(rand())/RAND_MAX - 0.5;
-//
-//  for(;;){// Main learning loop
-//    MinErr=3.4e38; AveErr=0; MaxErr=-3.4e38; NumErr=0;
-//    for(p=0;p<NumPats;p++){ // for each pattern...
-//      // Cal neural network output
-//      for(i=0;i<NumHN1;i++){ // Cal O/P of hidden layer 1
-//        float in=0;
-//        for(j=0;j<NumIPs;j++)
-//          in+=w1[j][i]*x[p][j];
-//        h1[i]=(float)(1.0/(1.0+exp(double(-in))));// Sigmoid fn
-//      }
-//      for(i=0;i<NumOPs;i++){ // Cal O/P of output layer
-//        float in=0;
-//        for(j=0;j<NumHN1;j++){
-//          in+=w2[j][i]*h1[j];
-//        }
-//        y[i]=(float)(1.0/(1.0+exp(double(-in))));// Sigmoid fn
-//      }
-//      // Cal error for this pattern
-//      PatErr=0.0;
-//      for(i=0;i<NumOPs;i++){
-//        float err=y[i]-d[p][i]; // actual-desired O/P
-//        if(err>0)PatErr+=err; else PatErr-=err;
-//        NumErr += ((y[i]<0.5&&d[p][i]>=0.5)||(y[i]>=0.5&&d[p][i]<0.5));//added for binary classification problem
-//      }
-//      if(PatErr<MinErr)MinErr=PatErr;
-//      if(PatErr>MaxErr)MaxErr=PatErr;
-//      AveErr+=PatErr;
-//
-//      // Learn pattern with back propagation
-//      for(i=0;i<NumOPs;i++){ // Modify layer 2 wts
-//        ad2[i]=(d[p][i]-y[i])*y[i]*(1.0-y[i]);
-//        for(j=0;j<NumHN1;j++){
-//          w2[j][i]+=LrnRate*h1[j]*ad2[i]+
-//                    Mtm1*(w2[j][i]-w22[j][i])+
-//                    Mtm2*(w22[j][i]-w222[j][i]);
-//          w222[j][i]=w22[j][i];
-//          w22[j][i]=w2[j][i];
-//        }
-//      }
-//      for(i=0;i<NumHN1;i++){ // Modify layer 1 wts
-//        float err=0.0;
-//        for(j=0;j<NumOPs;j++)
-//          err+=ad2[j]*w2[i][j];
-//        ad1[i]=err*h1[i]*(1.0-h1[i]);
-//        for(j=0;j<NumIPs;j++){
-//          w1[j][i]+=LrnRate*x[p][j]*ad1[i]+
-//                    Mtm1*(w1[j][i]-w11[j][i])+
-//                    Mtm2*(w11[j][i]-w111[j][i]);
-//          w111[j][i]=w11[j][i];
-//          w11[j][i]=w1[j][i];
-//        }
-//      }
-//    }// end for each pattern
-//    ItCnt++;
-//    AveErr/=NumPats;
-//    float PcntErr = NumErr/float(NumPats) * 100.0;
-//    cout.setf(ios::fixed|ios::showpoint);
-//    if (ItCnt % 1000 == 0)
-//       cout<<setprecision(6)<<setw(6)<<ItCnt<<": "<<setw(12)<<MinErr<<setw(12)<<AveErr<<setw(12)<<MaxErr<<setw(12)<<PcntErr<<endl;
-//    if((AveErr<=ObjErr)||(ItCnt==NumIts)) break;
-//  }// end main learning loop
-//  // Free memory
-//  delete h1; delete y; 
-//  delete ad1; delete ad2;
-//  Free2DAry(w1, NumIPs);// 1st layer wts
-//  Free2DAry(w11, NumIPs);
-//  Free2DAry(w111, NumIPs);
-//  Free2DAry(w2, NumHN1);// 2nd layer wts
-//  Free2DAry(w22, NumHN1);
-//  Free2DAry(w222, NumHN1);
-//}
-
-//void TrainNetRandom(float **x,float **d,int NumIPs,int NumOPs,int NumPats ){
-//// Trains 2 layer back propagation neural network
-//// x[][]=>input data, d[][]=>desired output data
-//
-//  float *h1 = new float[NumHN1]; // O/Ps of hidden layer
-//  float *y  = new float[NumOPs]; // O/P of Net
-//  float *ad1= new float[NumHN1]; // HN1 back prop errors
-//  float *ad2= new float[NumOPs]; // O/P back prop errors
-//  float PatErr,MinErr,AveErr,MaxErr;  // Pattern errors
-//  int p,i,j;     // for loops indexes
-//  long ItCnt=0;  // Iteration counter
-//  long NumErr=0; // Error counter (added for spiral problem)
-//
-//  cout<<"TrainNetRandom: IP:"<<NumIPs<<" H1:"<<NumHN1<<" OP:"<<NumOPs<<endl;
-//
-//  // Allocate memory for weights
-//  w1   = Aloc2DAry(NumIPs,NumHN1);// 1st layer wts
-//  w11  = Aloc2DAry(NumIPs,NumHN1);
-//  w111 = Aloc2DAry(NumIPs,NumHN1);
-//  w2   = Aloc2DAry(NumHN1,NumOPs);// 2nd layer wts
-//  w22  = Aloc2DAry(NumHN1,NumOPs);
-//  w222 = Aloc2DAry(NumHN1,NumOPs);
-//
-//  // Init wts between -0.5 and +0.5
-//  srand(time(0));
-//  for(i=0;i<NumIPs;i++)
-//    for(j=0;j<NumHN1;j++)
-//    w1[i][j]=w11[i][j]=w111[i][j]= float(rand())/RAND_MAX - 0.5;
-//  for(i=0;i<NumHN1;i++)
-//    for(j=0;j<NumOPs;j++)
-//      w2[i][j]=w22[i][j]=w222[i][j]= float(rand())/RAND_MAX - 0.5;
-//
-//  for(;;){// Main learning loop
-//    MinErr=3.4e38; AveErr=0; MaxErr=-3.4e38; NumErr=0;
-//    int idx[NumPats];
-//    for (int _i = 0; _i < NumPats; _i++) {
-//    	idx[_i] = _i;
-//	   }
-//	for (int _i = NumPats - 1; _i > 0; _i--) {
-//		swap(idx[_i], idx[rand() % _i]);
-//	}
-//    for(p=0;p<NumPats;p++){ // for each pattern...
-//      // Cal neural network output
-//      for(i=0;i<NumHN1;i++){ // Cal O/P of hidden layer 1
-//        float in=0;
-//        for(j=0;j<NumIPs;j++)
-//          in+=w1[j][i]*x[idx[p]][j];
-//        h1[i]=(float)(1.0/(1.0+exp(double(-in))));// Sigmoid fn
-//      }
-//      for(i=0;i<NumOPs;i++){ // Cal O/P of output layer
-//        float in=0;
-//        for(j=0;j<NumHN1;j++){
-//          in+=w2[j][i]*h1[j];
-//        }
-//        y[i]=(float)(1.0/(1.0+exp(double(-in))));// Sigmoid fn
-//      }
-//      // Cal error for this pattern
-//      PatErr=0.0;
-//      for(i=0;i<NumOPs;i++){
-//        float err=y[i]-d[idx[p]][i]; // actual-desired O/P
-//        if(err>0)PatErr+=err; else PatErr-=err;
-//        NumErr += ((y[i]<0.5&&d[idx[p]][i]>=0.5)||(y[i]>=0.5&&d[idx[p]][i]<0.5));//added for binary classification problem
-//      }
-//      if(PatErr<MinErr)MinErr=PatErr;
-//      if(PatErr>MaxErr)MaxErr=PatErr;
-//      AveErr+=PatErr;
-//
-//      // Learn pattern with back propagation
-//      for(i=0;i<NumOPs;i++){ // Modify layer 2 wts
-//        ad2[i]=(d[idx[p]][i]-y[i])*y[i]*(1.0-y[i]);
-//        for(j=0;j<NumHN1;j++){
-//          w2[j][i]+=LrnRate*h1[j]*ad2[i]+
-//                    Mtm1*(w2[j][i]-w22[j][i])+
-//                    Mtm2*(w22[j][i]-w222[j][i]);
-//          w222[j][i]=w22[j][i];
-//          w22[j][i]=w2[j][i];
-//        }
-//      }
-//      for(i=0;i<NumHN1;i++){ // Modify layer 1 wts
-//        float err=0.0;
-//        for(j=0;j<NumOPs;j++)
-//          err+=ad2[j]*w2[i][j];
-//        ad1[i]=err*h1[i]*(1.0-h1[i]);
-//        for(j=0;j<NumIPs;j++){
-//          w1[j][i]+=LrnRate*x[idx[p]][j]*ad1[i]+
-//                    Mtm1*(w1[j][i]-w11[j][i])+
-//                    Mtm2*(w11[j][i]-w111[j][i]);
-//          w111[j][i]=w11[j][i];
-//          w11[j][i]=w1[j][i];
-//        }
-//      }
-//    }// end for each pattern
-//    ItCnt++;
-//    AveErr/=NumPats;
-//    float PcntErr = NumErr/float(NumPats) * 100.0;
-//    cout.setf(ios::fixed|ios::showpoint);
-//    if (ItCnt % 1000 == 0)
-//       cout<<setprecision(6)<<setw(6)<<ItCnt<<": "<<setw(12)<<MinErr<<setw(12)<<AveErr<<setw(12)<<MaxErr<<setw(12)<<PcntErr<<endl;
-//
-//    if((AveErr<=ObjErr)||(ItCnt==NumIts)) break;
-//    if (ordering == 2) {
-//      while (true) {
-//      	int randIdx1 = rand() % NumPats, randIdx2 = rand() % NumPats;
-//      	if(randIdx1 != randIdx2) {
-//      		swap(idx[randIdx1], idx[randIdx2]);
-//      		break;
-//  		  }
-//      }
-//    }
-//
-//  }// end main learning loop
-//  // Free memory
-//  delete h1; delete y; 
-//  delete ad1; delete ad2;
-//  Free2DAry(w1, NumIPs);// 1st layer wts
-//  Free2DAry(w11, NumIPs);
-//  Free2DAry(w111, NumIPs);
-//  Free2DAry(w2, NumHN1);// 2nd layer wts
-//  Free2DAry(w22, NumHN1);
-//  Free2DAry(w222, NumHN1);
-//}
-
-//void TrainNetRandomSwap(float **x,float **d,int NumIPs,int NumOPs,int NumPats ){
-//// Trains 2 layer back propagation neural network
-//// x[][]=>input data, d[][]=>desired output data
-//
-//  float *h1 = new float[NumHN1]; // O/Ps of hidden layer
-//  float *y  = new float[NumOPs]; // O/P of Net
-//  float *ad1= new float[NumHN1]; // HN1 back prop errors
-//  float *ad2= new float[NumOPs]; // O/P back prop errors
-//  float PatErr,MinErr,AveErr,MaxErr;  // Pattern errors
-//  int p,i,j;     // for loops indexes
-//  long ItCnt=0;  // Iteration counter
-//  long NumErr=0; // Error counter (added for spiral problem)
-//
-//  cout<<"TrainNetRandomSwap: IP:"<<NumIPs<<" H1:"<<NumHN1<<" OP:"<<NumOPs<<endl;
-//
-//  // Allocate memory for weights
-//  w1   = Aloc2DAry(NumIPs,NumHN1);// 1st layer wts
-//  w11  = Aloc2DAry(NumIPs,NumHN1);
-//  w111 = Aloc2DAry(NumIPs,NumHN1);
-//  w2   = Aloc2DAry(NumHN1,NumOPs);// 2nd layer wts
-//  w22  = Aloc2DAry(NumHN1,NumOPs);
-//  w222 = Aloc2DAry(NumHN1,NumOPs);
-//
-//  // Init wts between -0.5 and +0.5
-//  srand(time(0));
-//  for(i=0;i<NumIPs;i++)
-//    for(j=0;j<NumHN1;j++)
-//    w1[i][j]=w11[i][j]=w111[i][j]= float(rand())/RAND_MAX - 0.5;
-//  for(i=0;i<NumHN1;i++)
-//    for(j=0;j<NumOPs;j++)
-//      w2[i][j]=w22[i][j]=w222[i][j]= float(rand())/RAND_MAX - 0.5;
-//
-//	int idx[NumPats];
-//    for (int i = 0; i < NumPats; i++) {
-//    	idx[i] = i;
-//	}
-//	for (int i = NumPats - 1; i > 0; i--) {
-//		swap(idx[i], idx[rand() % i]);
-//	}
-//  for(;;){// Main learning loop
-//    MinErr=3.4e38; AveErr=0; MaxErr=-3.4e38; NumErr=0;
-//    for(p=0;p<NumPats;p++){ // for each pattern...
-//      // Cal neural network output
-//      for(i=0;i<NumHN1;i++){ // Cal O/P of hidden layer 1
-//        float in=0;
-//        for(j=0;j<NumIPs;j++)
-//          in+=w1[j][i]*x[idx[p]][j];
-//        h1[i]=(float)(1.0/(1.0+exp(double(-in))));// Sigmoid fn
-//      }
-//      for(i=0;i<NumOPs;i++){ // Cal O/P of output layer
-//        float in=0;
-//        for(j=0;j<NumHN1;j++){
-//          in+=w2[j][i]*h1[j];
-//        }
-//        y[i]=(float)(1.0/(1.0+exp(double(-in))));// Sigmoid fn
-//      }
-//      // Cal error for this pattern
-//      PatErr=0.0;
-//      for(i=0;i<NumOPs;i++){
-//        float err=y[i]-d[idx[p]][i]; // actual-desired O/P
-//        if(err>0)PatErr+=err; else PatErr-=err;
-//        NumErr += ((y[i]<0.5&&d[idx[p]][i]>=0.5)||(y[i]>=0.5&&d[idx[p]][i]<0.5));//added for binary classification problem
-//      }
-//      if(PatErr<MinErr)MinErr=PatErr;
-//      if(PatErr>MaxErr)MaxErr=PatErr;
-//      AveErr+=PatErr;
-//
-//      // Learn pattern with back propagation
-//      for(i=0;i<NumOPs;i++){ // Modify layer 2 wts
-//        ad2[i]=(d[idx[p]][i]-y[i])*y[i]*(1.0-y[i]);
-//        for(j=0;j<NumHN1;j++){
-//          w2[j][i]+=LrnRate*h1[j]*ad2[i]+
-//                    Mtm1*(w2[j][i]-w22[j][i])+
-//                    Mtm2*(w22[j][i]-w222[j][i]);
-//          w222[j][i]=w22[j][i];
-//          w22[j][i]=w2[j][i];
-//        }
-//      }
-//      for(i=0;i<NumHN1;i++){ // Modify layer 1 wts
-//        float err=0.0;
-//        for(j=0;j<NumOPs;j++)
-//          err+=ad2[j]*w2[i][j];
-//        ad1[i]=err*h1[i]*(1.0-h1[i]);
-//        for(j=0;j<NumIPs;j++){
-//          w1[j][i]+=LrnRate*x[idx[p]][j]*ad1[i]+
-//                    Mtm1*(w1[j][i]-w11[j][i])+
-//                    Mtm2*(w11[j][i]-w111[j][i]);
-//          w111[j][i]=w11[j][i];
-//          w11[j][i]=w1[j][i];
-//        }
-//      }
-//    }// end for each pattern
-//    ItCnt++;
-//    AveErr/=NumPats;
-//    float PcntErr = NumErr/float(NumPats) * 100.0;
-//    cout.setf(ios::fixed|ios::showpoint);
-//    if (ItCnt % 1000 == 0) 
-//    	cout<<setprecision(6)<<setw(6)<<ItCnt<<": "<<setw(12)<<MinErr<<setw(12)<<AveErr<<setw(12)<<MaxErr<<setw(12)<<PcntErr<<endl;
-//    
-//	
-//    if((AveErr<=ObjErr)||(ItCnt==NumIts)) break;
-//    //MODIFIED: index exchange
-//    while (true) {
-//    	int randIdx1 = rand() % NumPats, randIdx2 = rand() % NumPats;
-//    	if(randIdx1 != randIdx2) {
-//    		swap(idx[randIdx1], idx[randIdx2]);
-//    		break;
-//		}
-//	}
-//  }// end main learning loop
-//  // Free memory
-//  delete h1; delete y; 
-//  delete ad1; delete ad2;
-//  Free2DAry(w1, NumIPs);// 1st layer wts
-//  Free2DAry(w11, NumIPs);
-//  Free2DAry(w111, NumIPs);
-//  Free2DAry(w2, NumHN1);// 2nd layer wts
-//  Free2DAry(w22, NumHN1);
-//  Free2DAry(w222, NumHN1);
-//}
-//
-//void TrainNetRandomN(float **x,float **d,int NumIPs,int NumOPs,int NumPats, int N){
-//// Trains 2 layer back propagation neural network
-//// x[][]=>input data, d[][]=>desired output data
-//  
-//  float *h1 = new float[NumHN1]; // O/Ps of hidden layer
-//  float *y  = new float[NumOPs]; // O/P of Net
-//  float *ad1= new float[NumHN1]; // HN1 back prop errors
-//  float *ad2= new float[NumOPs]; // O/P back prop errors
-//  bool misClassified[NumPats];
-//  for (int i = 0; i < NumPats; i++) {
-//    misClassified[i] = true;
-//  }
-//  
-//  float PatErr,MinErr,AveErr,MaxErr;  // Pattern errors
-//  int p,i,j;     // for loops indexes
-//  long ItCnt=0;  // Iteration counter
-//  long NumErr=0; // Error counter (added for spiral problem)
-//
-//  cout<<"TrainNetRandomN: IP:"<<NumIPs<<" H1:"<<NumHN1<<" OP:"<<NumOPs<<endl;
-//
-//  // Allocate memory for weights
-//  w1   = Aloc2DAry(NumIPs,NumHN1);// 1st layer wts
-//  w11  = Aloc2DAry(NumIPs,NumHN1);
-//  w111 = Aloc2DAry(NumIPs,NumHN1);
-//  w2   = Aloc2DAry(NumHN1,NumOPs);// 2nd layer wts
-//  w22  = Aloc2DAry(NumHN1,NumOPs);
-//  w222 = Aloc2DAry(NumHN1,NumOPs);
-//
-//  // Init wts between -0.5 and +0.5
-//  srand(time(0));
-//  for(i=0;i<NumIPs;i++)
-//    for(j=0;j<NumHN1;j++)
-//    w1[i][j]=w11[i][j]=w111[i][j]= float(rand())/RAND_MAX - 0.5;
-//  for(i=0;i<NumHN1;i++)
-//    for(j=0;j<NumOPs;j++)
-//      w2[i][j]=w22[i][j]=w222[i][j]= float(rand())/RAND_MAX - 0.5;
-//  
-//  int idx[N];
-//  for(;;){// Main learning loop
-//  	int cnt = 0;
-//  	int first_index = 0;
-//    for (int _i = 0; _i < N; _i++) {
-//      
-//		  int randNum = rand() % NumPats;
-//		  if (_i == 0) {
-//		    first_index = randNum;
-//      }
-//		  if (misClassified[randNum]) {
-//		  	idx[cnt++] = randNum;
-//		  }
-//  	}
-//  	if (cnt == 0) {
-//  	  idx[cnt++] = first_index;
-//    }
-//    MinErr=3.4e38; AveErr=0; MaxErr=-3.4e38; NumErr=0;
-//    for(int _i = 0; _i < cnt; _i++){ // for each pattern...
-//      // Cal neural network output
-//      p = idx[_i];
-//      for(i=0;i<NumHN1;i++){ // Cal O/P of hidden layer 1
-//        float in=0;
-//        for(j=0;j<NumIPs;j++)
-//          in+=w1[j][i]*x[p][j];
-//        h1[i]=(float)(1.0/(1.0+exp(double(-in))));// Sigmoid fn
-//      }
-//      for(i=0;i<NumOPs;i++){ // Cal O/P of output layer
-//        float in=0;
-//        for(j=0;j<NumHN1;j++){
-//          in+=w2[j][i]*h1[j];
-//        }
-//        y[i]=(float)(1.0/(1.0+exp(double(-in))));// Sigmoid fn
-//      }
-//      // Cal error for this pattern
-////      PatErr=0.0;
-////      for(i=0;i<NumOPs;i++){
-////        float err=y[i]-d[p][i]; // actual-desired O/P
-////        if(err>0)PatErr+=err; else PatErr-=err;
-////        NumErr += ((y[i]<0.5&&d[p][i]>=0.5)||(y[i]>=0.5&&d[p][i]<0.5));//added for binary classification problem
-////        misClassified[p] = (y[i]<0.5&&d[p][i]>=0.5)||(y[i]>=0.5&&d[p][i]<0.5)?true : false;
-////      }
-////      if(PatErr<MinErr)MinErr=PatErr;
-////      if(PatErr>MaxErr)MaxErr=PatErr;
-////      AveErr+=PatErr;
-//
-//      // Learn pattern with back propagation
-//      for(i=0;i<NumOPs;i++){ // Modify layer 2 wts
-//        ad2[i]=(d[p][i]-y[i])*y[i]*(1.0-y[i]);
-//        for(j=0;j<NumHN1;j++){
-//          w2[j][i]+=LrnRate*h1[j]*ad2[i]+
-//                    Mtm1*(w2[j][i]-w22[j][i])+
-//                    Mtm2*(w22[j][i]-w222[j][i]);
-//          w222[j][i]=w22[j][i];
-//          w22[j][i]=w2[j][i];
-//        }
-//      }
-//      for(i=0;i<NumHN1;i++){ // Modify layer 1 wts
-//        float err=0.0;
-//        for(j=0;j<NumOPs;j++)
-//          err+=ad2[j]*w2[i][j];
-//        ad1[i]=err*h1[i]*(1.0-h1[i]);
-//        for(j=0;j<NumIPs;j++){
-//          w1[j][i]+=LrnRate*x[p][j]*ad1[i]+
-//                    Mtm1*(w1[j][i]-w11[j][i])+
-//                    Mtm2*(w11[j][i]-w111[j][i]);
-//          w111[j][i]=w11[j][i];
-//          w11[j][i]=w1[j][i];
-//        }
-//      }
-//    }// end for each pattern
-//    for (int p = 0; p < NumPats; p++) {
-//      for(i=0;i<NumHN1;i++){ // Cal O/P of hidden layer 1
-//        float in=0;
-//        for(j=0;j<NumIPs;j++)
-//          in+=w1[j][i]*x[p][j];
-//        h1[i]=(float)(1.0/(1.0+exp(double(-in))));// Sigmoid fn
-//      }
-//      for(i=0;i<NumOPs;i++){ // Cal O/P of output layer
-//        float in=0;
-//        for(j=0;j<NumHN1;j++){
-//          in+=w2[j][i]*h1[j];
-//        }
-//        y[i]=(float)(1.0/(1.0+exp(double(-in))));// Sigmoid fn
-//      }
-//      // Cal error for this pattern
-//      PatErr=0.0;
-//      for(i=0;i<NumOPs;i++){
-//        float err=y[i]-d[p][i]; // actual-desired O/P
-//        if(err>0)PatErr+=err; else PatErr-=err;
-//        NumErr += ((y[i]<0.5&&d[p][i]>=0.5)||(y[i]>=0.5&&d[p][i]<0.5));//added for binary classification problem
-//        misClassified[p] = (y[i]<0.5&&d[p][i]>=0.5)||(y[i]>=0.5&&d[p][i]<0.5)?true : false;
-//      }
-//      if(PatErr<MinErr)MinErr=PatErr;
-//      if(PatErr>MaxErr)MaxErr=PatErr;
-//      AveErr+=PatErr;
-//    }
-//    ItCnt++;
-//    AveErr/=NumPats;
-//    float PcntErr = NumErr/float(NumPats) * 100.0;
-//    cout.setf(ios::fixed|ios::showpoint);
-//    if (ItCnt % 1000 == 0)
-//       cout<<setprecision(6)<<setw(6)<<ItCnt<<": "<<setw(12)<<MinErr<<setw(12)<<AveErr<<setw(12)<<MaxErr<<setw(12)<<PcntErr<<endl;
-//
-//     if((AveErr<=ObjErr)||(ItCnt==NumIts)) break;
-//  }// end main learning loop
-//  // Free memory
-//  delete h1; delete y; 
-//  delete ad1; delete ad2;
-//  Free2DAry(w1, NumIPs);// 1st layer wts
-//  Free2DAry(w11, NumIPs);
-//  Free2DAry(w111, NumIPs);
-//  Free2DAry(w2, NumHN1);// 2nd layer wts
-//  Free2DAry(w22, NumHN1);
-//  Free2DAry(w222, NumHN1);
-//}
-//
 void TrainNet3(float **x,float **d,int NumIPs,int NumOPs,int NumPats ){
 // Trains 2 layer back propagation neural network
 // x[][]=>input data, d[][]=>desired output data
